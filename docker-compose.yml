@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: text2sql_dev_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     devuser
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB:       text2sql_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d text2sql_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
