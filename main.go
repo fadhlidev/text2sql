@@ -19,6 +19,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 	"google.golang.org/genai"
 
+	"github.com/fadhlidev/text2sql/cache"
 	"github.com/fadhlidev/text2sql/handler"
 	"github.com/fadhlidev/text2sql/schema"
 	"github.com/fadhlidev/text2sql/text2sql"
@@ -62,7 +63,11 @@ func main() {
 
 	// Wire up LLM provider
 	llmClient := initLLM()
-	conv := text2sql.New(llmClient, s)
+	
+	// Wire up Cache
+	ca := initCache()
+
+	conv := text2sql.New(llmClient, s).WithCache(ca)
 	exec := text2sql.NewExecutor(db)
 	qh := handler.NewQueryHandler(conv, exec)
 
@@ -170,4 +175,21 @@ func initLLM() text2sql.LLMClient {
 		log.Fatalf("unsupported LLM provider: %s", provider)
 		return nil
 	}
+}
+
+// initCache initializes the cache based on environment variables
+func initCache() cache.Cache {
+	redisURI := os.Getenv("REDIS_URI")
+	if redisURI != "" {
+		ca, err := cache.NewRedisCache(redisURI)
+		if err != nil {
+			log.Printf("failed to connect to redis, falling back to memory: %v", err)
+		} else {
+			log.Println("using redis cache")
+			return ca
+		}
+	}
+
+	log.Println("using in-memory cache (TTL: 1h)")
+	return cache.NewMemoryCache(1*time.Hour, 10*time.Minute)
 }
