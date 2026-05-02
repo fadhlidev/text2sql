@@ -14,8 +14,10 @@ import (
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
 	_ "github.com/jackc/pgx/v5/stdlib" // Postgres driver
 	"github.com/joho/godotenv"
+	"github.com/liushuangls/go-anthropic/v2"
 	_ "modernc.org/sqlite" // SQLite driver
 	openai "github.com/sashabaranov/go-openai"
+	"google.golang.org/genai"
 
 	"github.com/fadhlidev/text2sql/handler"
 	"github.com/fadhlidev/text2sql/schema"
@@ -27,7 +29,6 @@ func main() {
 	_ = godotenv.Load()
 
 	dbURI := mustEnv("DB_URI")
-	apiKey := mustEnv("OPENAI_API_KEY")
 
 	// Infer dialect and select driver
 	dialect := dialectFromURI(dbURI)
@@ -53,14 +54,14 @@ func main() {
 	log.Println("database connected")
 
 	// Load schema ONCE at startup
-	s, err := schema.Introspect(ctx, db, dialectFromURI(dbURI))
+	s, err := schema.Introspect(ctx, db, dialect)
 	if err != nil {
 		log.Fatalf("schema introspection failed: %v", err)
 	}
 	log.Printf("schema loaded: %d tables", len(s.Tables))
 
-	// Wire up dependencies
-	llmClient := text2sql.NewOpenAIClient(openai.NewClient(apiKey), "gpt-4o")
+	// Wire up LLM provider
+	llmClient := initLLM()
 	conv := text2sql.New(llmClient, s)
 	exec := text2sql.NewExecutor(db)
 	qh := handler.NewQueryHandler(conv, exec)
@@ -117,5 +118,45 @@ func driverForDialect(dialect string) string {
 		return "sqlite"
 	default:
 		return "pgx"
+	}
+}
+
+// initLLM initializes the LLM client based on environment variables
+func initLLM() text2sql.LLMClient {
+	provider := strings.ToLower(os.Getenv("LLM_PROVIDER"))
+	if provider == "" {
+		provider = "openai" // default
+	}
+
+	model := os.Getenv("LLM_MODEL")
+
+	switch provider {
+	case "anthropic":
+		apiKey := mustEnv("ANTHROPIC_API_KEY")
+		if model == "" {
+			model = "claude-3-5-sonnet-20240620"
+		}
+		return text2sql.NewAnthropicClient(anthropic.NewClient(apiKey), model)
+	case "gemini":
+		apiKey := mustEnv("GEMINI_API_KEY")
+		if model == "" {
+			model = "gemini-1.5-flash"
+		}
+		client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+			APIKey: apiKey,
+		})
+		if err != nil {
+			log.Fatalf("failed to create gemini client: %v", err)
+		}
+		return text2sql.NewGeminiClient(client, model)
+	case "openai":
+		apiKey := mustEnv("OPENAI_API_KEY")
+		if model == "" {
+			model = "gpt-4o"
+		}
+		return text2sql.NewOpenAIClient(openai.NewClient(apiKey), model)
+	default:
+		log.Fatalf("unsupported LLM provider: %s", provider)
+		return nil
 	}
 }
