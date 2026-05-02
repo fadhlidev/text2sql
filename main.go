@@ -11,8 +11,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/jackc/pgx/v5/stdlib" // Postgres driver
 	"github.com/joho/godotenv"
+	_ "modernc.org/sqlite" // SQLite driver
 	openai "github.com/sashabaranov/go-openai"
 
 	"github.com/fadhlidev/text2sql/handler"
@@ -27,10 +29,14 @@ func main() {
 	dbURI := mustEnv("DB_URI")
 	apiKey := mustEnv("OPENAI_API_KEY")
 
+	// Infer dialect and select driver
+	dialect := dialectFromURI(dbURI)
+	driver := driverForDialect(dialect)
+
 	// Connect to database
-	db, err := sql.Open("pgx", dbURI)
+	db, err := sql.Open(driver, dbURI)
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		log.Fatalf("failed to open database (%s): %v", dialect, err)
 	}
 	defer db.Close()
 
@@ -97,5 +103,19 @@ func dialectFromURI(uri string) string {
 		return "mysql"
 	default:
 		return "sqlite"
+	}
+}
+
+// driverForDialect returns the registered database/sql driver name for the given dialect
+func driverForDialect(dialect string) string {
+	switch dialect {
+	case "postgres":
+		return "pgx"
+	case "mysql":
+		return "mysql"
+	case "sqlite":
+		return "sqlite"
+	default:
+		return "pgx"
 	}
 }
