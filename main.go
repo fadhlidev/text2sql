@@ -155,6 +155,17 @@ func initLLM() text2sql.LLMClient {
 			model = "gpt-4o"
 		}
 		return text2sql.NewOpenAIClient(openai.NewClient(apiKey), model)
+	case "azure-openai":
+		apiKey := mustEnv("AZURE_OPENAI_API_KEY")
+		endpoint := mustEnv("AZURE_OPENAI_ENDPOINT")
+		deployment := os.Getenv("AZURE_OPENAI_DEPLOYMENT_ID")
+		if deployment == "" {
+			deployment = model // fallback to model if deployment id is not set
+		}
+		if deployment == "" {
+			log.Fatalf("AZURE_OPENAI_DEPLOYMENT_ID or LLM_MODEL must be set for azure-openai")
+		}
+		return text2sql.NewAzureOpenAIClient(apiKey, endpoint, deployment)
 	default:
 		log.Fatalf("unsupported LLM provider: %s", provider)
 		return nil

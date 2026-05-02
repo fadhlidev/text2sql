@@ -109,3 +109,35 @@ func (g *GeminiClient) Complete(ctx context.Context, system, user string) (strin
 	
 	return "", fmt.Errorf("gemini: could not extract text from response")
 }
+
+// --- Azure OpenAI ---
+
+type AzureOpenAIClient struct {
+	client *openai.Client
+	model  string // This is usually the deployment name in Azure
+}
+
+func NewAzureOpenAIClient(apiKey, endpoint, deployment string) *AzureOpenAIClient {
+	config := openai.DefaultAzureConfig(apiKey, endpoint)
+	config.AzureModelMapperFunc = func(model string) string {
+		return deployment // Always map to the deployment ID
+	}
+	client := openai.NewClientWithConfig(config)
+	return &AzureOpenAIClient{client: client, model: deployment}
+}
+
+func (a *AzureOpenAIClient) Complete(ctx context.Context, system, user string) (string, error) {
+	resp, err := a.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       a.model,
+		Temperature: 0,
+		MaxTokens:   512,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: system},
+			{Role: openai.ChatMessageRoleUser, Content: user},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("azure-openai: %w", err)
+	}
+	return resp.Choices[0].Message.Content, nil
+}
