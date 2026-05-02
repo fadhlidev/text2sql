@@ -97,9 +97,10 @@ func (c *Converter) TextToSQL(ctx context.Context, question string) (string, str
 	}
 
 	// Parse JSON response
+	cleaned := cleanJSON(resp)
 	var trans Translation
-	if err := json.Unmarshal([]byte(resp), &trans); err != nil {
-		return "", "", fmt.Errorf("llm returned invalid json: %w", err)
+	if err := json.Unmarshal([]byte(cleaned), &trans); err != nil {
+		return "", "", fmt.Errorf("llm returned invalid json: %w (raw: %s)", err, resp)
 	}
 
 	sql := strings.TrimSpace(trans.SQL)
@@ -114,4 +115,16 @@ func (c *Converter) TextToSQL(ctx context.Context, question string) (string, str
 	}
 
 	return sql, trans.Explanation, nil
+}
+
+func cleanJSON(input string) string {
+	input = strings.TrimSpace(input)
+	if strings.HasPrefix(input, "```json") {
+		input = strings.TrimPrefix(input, "```json")
+		input = strings.TrimSuffix(input, "```")
+	} else if strings.HasPrefix(input, "```") {
+		input = strings.TrimPrefix(input, "```")
+		input = strings.TrimSuffix(input, "```")
+	}
+	return strings.TrimSpace(input)
 }
