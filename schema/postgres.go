@@ -7,6 +7,7 @@ import (
 )
 
 func introspectPostgres(ctx context.Context, db *sql.DB) (*Schema, error) {
+	// 1. Get Tables and Views
 	rows, err := db.QueryContext(ctx, `
 		SELECT
 			c.table_name,
@@ -14,16 +15,13 @@ func introspectPostgres(ctx context.Context, db *sql.DB) (*Schema, error) {
 			c.data_type,
 			c.is_nullable = 'YES' AS nullable,
 			EXISTS (
-				SELECT 1
-				FROM information_schema.table_constraints tc
-				JOIN information_schema.key_column_usage ku
-					ON tc.constraint_name = ku.constraint_name
-				WHERE tc.constraint_type = 'PRIMARY KEY'
-				  AND ku.table_name  = c.table_name
-				  AND ku.column_name = c.column_name
-				  AND ku.table_schema = c.table_schema
-			) AS is_pk
+				SELECT 1 FROM information_schema.key_column_usage kcu
+				JOIN information_schema.table_constraints tc ON kcu.constraint_name = tc.constraint_name
+				WHERE kcu.table_name = c.table_name AND kcu.column_name = c.column_name AND tc.constraint_type = 'PRIMARY KEY'
+			) AS is_pk,
+			t.table_type
 		FROM information_schema.columns c
+		JOIN information_schema.tables t ON c.table_name = t.table_name AND c.table_schema = t.table_schema
 		WHERE c.table_schema = 'public'
 		ORDER BY c.table_name, c.ordinal_position
 	`)
@@ -33,7 +31,7 @@ func introspectPostgres(ctx context.Context, db *sql.DB) (*Schema, error) {
 	defer rows.Close()
 
 	schema := &Schema{Dialect: "postgres"}
-	tableIndex := map[string]int{} // tableName → index in schema.Tables
+	tableIndex := map[string]int{}
 
 	for rows.Next() {
 		var (
@@ -42,15 +40,19 @@ func introspectPostgres(ctx context.Context, db *sql.DB) (*Schema, error) {
 			dataType   string
 			nullable   bool
 			isPK       bool
+			tableType  string
 		)
-		if err := rows.Scan(&tableName, &columnName, &dataType, &nullable, &isPK); err != nil {
+		if err := rows.Scan(&tableName, &columnName, &dataType, &nullable, &isPK, &tableType); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
-		// Find or create the Table entry
 		idx, exists := tableIndex[tableName]
 		if !exists {
-			schema.Tables = append(schema.Tables, Table{Name: tableName})
+			tType := "table"
+			if tableType == "VIEW" {
+				tType = "view"
+			}
+			schema.Tables = append(schema.Tables, Table{Name: tableName, Type: tType})
 			idx = len(schema.Tables) - 1
 			tableIndex[tableName] = idx
 		}
@@ -61,6 +63,31 @@ func introspectPostgres(ctx context.Context, db *sql.DB) (*Schema, error) {
 			Nullable: nullable,
 			IsPK:     isPK,
 		})
+	}
+
+	// 2. Get Functions/Procedures
+	// This query gets public functions that aren't internal to Postgres
+	procRows, err := db.QueryContext(ctx, `
+		SELECT
+			p.proname AS name,
+			pg_get_function_arguments(p.oid) AS args,
+			pg_get_function_result(p.oid) AS return_type
+		FROM pg_proc p
+		JOIN pg_namespace n ON p.pronamespace = n.oid
+		WHERE n.nspname = 'public'
+		AND p.prokind IN ('f', 'p')
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("introspect procs: %w", err)
+	}
+	defer procRows.Close()
+
+	for procRows.Next() {
+		var p Procedure
+		if err := procRows.Scan(&p.Name, &p.Args, &p.ReturnType); err != nil {
+			return nil, fmt.Errorf("scan proc: %w", err)
+		}
+		schema.Procedures = append(schema.Procedures, p)
 	}
 
 	return schema, rows.Err()

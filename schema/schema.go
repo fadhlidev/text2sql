@@ -17,13 +17,22 @@ type Column struct {
 // Table represents one database table with its columns
 type Table struct {
 	Name    string
+	Type    string // "table" or "view"
 	Columns []Column
+}
+
+// Procedure represents a stored procedure or function
+type Procedure struct {
+	Name       string
+	Args       string // e.g. "id int, name text"
+	ReturnType string
 }
 
 // Schema represents the entire database structure
 type Schema struct {
-	Dialect string // "postgres", "mysql", "sqlite"
-	Tables  []Table
+	Dialect    string // "postgres", "mysql", "sqlite"
+	Tables     []Table
+	Procedures []Procedure
 }
 
 // Context converts the schema to a compact text string for injection into LLM prompts.
@@ -35,7 +44,11 @@ type Schema struct {
 func (s *Schema) Context() string {
 	var sb strings.Builder
 	for _, t := range s.Tables {
-		fmt.Fprintf(&sb, "Table: %s\n", t.Name)
+		label := "Table"
+		if strings.ToLower(t.Type) == "view" {
+			label = "View"
+		}
+		fmt.Fprintf(&sb, "%s: %s\n", label, t.Name)
 		for _, c := range t.Columns {
 			meta := ""
 			if c.IsPK {
@@ -51,5 +64,13 @@ func (s *Schema) Context() string {
 		}
 		sb.WriteString("\n")
 	}
+
+	if len(s.Procedures) > 0 {
+		sb.WriteString("Procedures/Functions:\n")
+		for _, p := range s.Procedures {
+			fmt.Fprintf(&sb, "  - %s(%s) returns %s\n", p.Name, p.Args, p.ReturnType)
+		}
+	}
+
 	return sb.String()
 }
