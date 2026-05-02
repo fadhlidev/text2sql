@@ -9,7 +9,7 @@ import (
 
 // Add these two interfaces for testability (mocking)
 type converterIface interface {
-	TextToSQL(ctx context.Context, question string) (string, error)
+	TextToSQL(ctx context.Context, question string) (string, string, error)
 }
 
 type executorIface interface {
@@ -33,8 +33,9 @@ type queryRequest struct {
 
 // queryResponse is the JSON body returned on success
 type queryResponse struct {
-	SQL    string           `json:"sql"`
-	Result []map[string]any `json:"result"`
+	SQL         string           `json:"sql"`
+	Explanation string           `json:"explanation"`
+	Result      []map[string]any `json:"result"`
 }
 
 // errorResponse is the JSON body returned on failure
@@ -63,7 +64,7 @@ func (h *QueryHandler) Query(c fiber.Ctx) error {
 	}
 
 	// Step 3: Convert question to SQL
-	sql, err := h.conv.TextToSQL(c.Context(), req.Question)
+	sql, explanation, err := h.conv.TextToSQL(c.Context(), req.Question)
 	if err != nil {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(errorResponse{
 			Error: err.Error(),
@@ -82,7 +83,8 @@ func (h *QueryHandler) Query(c fiber.Ctx) error {
 
 	// Step 5: Return success response
 	return c.JSON(queryResponse{
-		SQL:    sql,
-		Result: result,
+		SQL:         sql,
+		Explanation: explanation,
+		Result:      result,
 	})
 }

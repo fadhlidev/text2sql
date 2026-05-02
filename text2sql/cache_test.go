@@ -14,7 +14,7 @@ type cacheMockLLM struct {
 
 func (m *cacheMockLLM) Complete(ctx context.Context, system, user string) (string, error) {
 	m.count++
-	return "SELECT * FROM users", nil
+	return `{"sql": "SELECT * FROM users", "explanation": "test"}`, nil
 }
 
 func TestConverter_Cache(t *testing.T) {
@@ -27,7 +27,7 @@ func TestConverter_Cache(t *testing.T) {
 	q := "get all users"
 
 	// 1. First call - should call LLM
-	_, err := conv.TextToSQL(ctx, q)
+	_, _, err := conv.TextToSQL(ctx, q)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,16 +36,19 @@ func TestConverter_Cache(t *testing.T) {
 	}
 
 	// 2. Second call - should be cached
-	_, err = conv.TextToSQL(ctx, q)
+	_, expl, err := conv.TextToSQL(ctx, q)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if llm.count != 1 {
 		t.Errorf("expected still 1 LLM call (cached), got %d", llm.count)
 	}
+	if expl != "test" {
+		t.Errorf("expected explanation 'test' from cache, got: %s", expl)
+	}
 
 	// 3. Different question - should call LLM
-	_, err = conv.TextToSQL(ctx, "get admins")
+	_, _, err = conv.TextToSQL(ctx, "get admins")
 	if err != nil {
 		t.Fatal(err)
 	}

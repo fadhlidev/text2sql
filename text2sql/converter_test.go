@@ -9,7 +9,6 @@ import (
 )
 
 // mockLLM is a fake LLM that always returns the response you configure.
-// It satisfies the LLMClient interface.
 type mockLLM struct {
 	response string
 	err      error
@@ -32,10 +31,11 @@ func newTestConverter(llmResponse string) *Converter {
 	return New(&mockLLM{response: llmResponse}, s)
 }
 
-func TestConverter_ReturnsSQL_WhenLLMRespondsWithSelect(t *testing.T) {
-	conv := newTestConverter("SELECT id, name FROM customers LIMIT 100")
+func TestConverter_ReturnsSQL_WhenLLMRespondsWithJSON(t *testing.T) {
+	jsonResp := `{"sql": "SELECT id, name FROM customers LIMIT 100", "explanation": "Fetching customers."}`
+	conv := newTestConverter(jsonResp)
 
-	sql, err := conv.TextToSQL(context.Background(), "list all customers")
+	sql, expl, err := conv.TextToSQL(context.Background(), "list all customers")
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -43,12 +43,15 @@ func TestConverter_ReturnsSQL_WhenLLMRespondsWithSelect(t *testing.T) {
 	if !strings.HasPrefix(sql, "SELECT") {
 		t.Errorf("expected SQL to start with SELECT, got: %s", sql)
 	}
+	if expl != "Fetching customers." {
+		t.Errorf("expected explanation, got: %s", expl)
+	}
 }
 
 func TestConverter_ReturnsError_WhenLLMReturnsErrorPrefix(t *testing.T) {
 	conv := newTestConverter("ERROR: no table named invoices in schema")
 
-	_, err := conv.TextToSQL(context.Background(), "show all invoices")
+	_, _, err := conv.TextToSQL(context.Background(), "show all invoices")
 
 	if err == nil {
 		t.Fatal("expected an error, got nil")
@@ -59,9 +62,10 @@ func TestConverter_ReturnsError_WhenLLMReturnsErrorPrefix(t *testing.T) {
 }
 
 func TestConverter_ReturnsError_WhenLLMReturnsUnsafeSQL(t *testing.T) {
-	conv := newTestConverter("DROP TABLE customers")
+	jsonResp := `{"sql": "DROP TABLE customers", "explanation": "Deleting them all."}`
+	conv := newTestConverter(jsonResp)
 
-	_, err := conv.TextToSQL(context.Background(), "delete all customers")
+	_, _, err := conv.TextToSQL(context.Background(), "delete all customers")
 
 	if err == nil {
 		t.Fatal("expected a validation error, got nil")
@@ -71,15 +75,12 @@ func TestConverter_ReturnsError_WhenLLMReturnsUnsafeSQL(t *testing.T) {
 	}
 }
 
-func TestConverter_TrimsWhitespace(t *testing.T) {
-	conv := newTestConverter("  \n  SELECT id FROM customers  \n  ")
+func TestConverter_ReturnsError_WhenInvalidJSON(t *testing.T) {
+	conv := newTestConverter("not a json")
 
-	sql, err := conv.TextToSQL(context.Background(), "get customer ids")
+	_, _, err := conv.TextToSQL(context.Background(), "test")
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.HasPrefix(sql, " ") || strings.HasSuffix(sql, " ") {
-		t.Errorf("expected trimmed SQL, got: %q", sql)
+	if err == nil {
+		t.Fatal("expected error for invalid json, got nil")
 	}
 }
