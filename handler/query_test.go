@@ -13,12 +13,13 @@ import (
 
 // mockConverter satisfies the converter interface for handler tests
 type mockConverter struct {
-	sql string
-	err error
+	sql  string
+	expl string
+	err  error
 }
 
-func (m *mockConverter) TextToSQL(_ context.Context, _ string) (string, error) {
-	return m.sql, m.err
+func (m *mockConverter) TextToSQL(_ context.Context, _ string) (string, string, error) {
+	return m.sql, m.expl, m.err
 }
 
 // mockExecutor satisfies the executor interface for handler tests
@@ -41,7 +42,7 @@ func newTestApp(conv converterIface, exec executorIface) *fiber.App {
 
 func TestQueryHandler_Success(t *testing.T) {
 	app := newTestApp(
-		&mockConverter{sql: "SELECT id FROM customers LIMIT 100"},
+		&mockConverter{sql: "SELECT id FROM customers LIMIT 100", expl: "test explanation"},
 		&mockExecutor{result: []map[string]any{{"id": 1}}},
 	)
 
@@ -62,6 +63,9 @@ func TestQueryHandler_Success(t *testing.T) {
 
 	if result["sql"] != "SELECT id FROM customers LIMIT 100" {
 		t.Errorf("unexpected sql field: %v", result["sql"])
+	}
+	if result["explanation"] != "test explanation" {
+		t.Errorf("unexpected explanation field: %v", result["explanation"])
 	}
 	if result["result"] == nil {
 		t.Error("expected result field to be present")
