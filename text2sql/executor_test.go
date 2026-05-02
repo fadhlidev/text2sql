@@ -10,7 +10,7 @@ import (
 func TestExecutor_ReturnsRows(t *testing.T) {
 	db, cleanup := testhelper.OpenTestDB(t)
 	defer cleanup()
-	testhelper.Seed(t, db)
+	testhelper.Seed(t, db, "postgres")
 
 	exec := NewExecutor(db)
 	result, err := exec.Run(context.Background(), "SELECT id, name FROM customers ORDER BY id")
@@ -29,7 +29,7 @@ func TestExecutor_ReturnsRows(t *testing.T) {
 func TestExecutor_ReturnsEmptySlice_WhenNoRows(t *testing.T) {
 	db, cleanup := testhelper.OpenTestDB(t)
 	defer cleanup()
-	testhelper.Seed(t, db)
+	testhelper.Seed(t, db, "postgres")
 
 	exec := NewExecutor(db)
 	result, err := exec.Run(context.Background(), "SELECT id FROM customers WHERE id = 99999")
@@ -63,7 +63,7 @@ func TestExecutor_RespectsTimeout(t *testing.T) {
 func TestExecutor_ReturnsAggregates(t *testing.T) {
 	db, cleanup := testhelper.OpenTestDB(t)
 	defer cleanup()
-	testhelper.Seed(t, db)
+	testhelper.Seed(t, db, "postgres")
 
 	exec := NewExecutor(db)
 	result, err := exec.Run(context.Background(),

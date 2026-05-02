@@ -4,19 +4,21 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/liushuangls/go-anthropic/v2"
 	openai "github.com/sashabaranov/go-openai"
+	"google.golang.org/genai"
 )
 
 // LLMClient is an interface. Any struct with a Complete method can be used.
-// This makes it easy to switch providers or write tests.
 type LLMClient interface {
 	Complete(ctx context.Context, systemPrompt, userMessage string) (string, error)
 }
 
-// OpenAIClient implements LLMClient using the OpenAI API
+// --- OpenAI ---
+
 type OpenAIClient struct {
 	client *openai.Client
-	model  string // e.g. "gpt-4o"
+	model  string
 }
 
 func NewOpenAIClient(client *openai.Client, model string) *OpenAIClient {
@@ -26,7 +28,7 @@ func NewOpenAIClient(client *openai.Client, model string) *OpenAIClient {
 func (o *OpenAIClient) Complete(ctx context.Context, system, user string) (string, error) {
 	resp, err := o.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:       o.model,
-		Temperature: 0, // IMPORTANT: always 0 for deterministic SQL output
+		Temperature: 0,
 		MaxTokens:   512,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: openai.ChatMessageRoleSystem, Content: system},
@@ -35,6 +37,107 @@ func (o *OpenAIClient) Complete(ctx context.Context, system, user string) (strin
 	})
 	if err != nil {
 		return "", fmt.Errorf("openai: %w", err)
+	}
+	return resp.Choices[0].Message.Content, nil
+}
+
+// --- Anthropic ---
+
+type AnthropicClient struct {
+	client *anthropic.Client
+	model  string
+}
+
+func NewAnthropicClient(client *anthropic.Client, model string) *AnthropicClient {
+	return &AnthropicClient{client: client, model: model}
+}
+
+func (a *AnthropicClient) Complete(ctx context.Context, system, user string) (string, error) {
+	resp, err := a.client.CreateMessages(ctx, anthropic.MessagesRequest{
+		Model:     anthropic.Model(a.model),
+		System:    system,
+		MaxTokens: 512,
+		Messages: []anthropic.Message{
+			{Role: anthropic.RoleUser, Content: []anthropic.MessageContent{anthropic.NewTextMessageContent(user)}},
+		},
+		Temperature: func(f float32) *float32 { return &f }(0.0),
+	})
+	if err != nil {
+		return "", fmt.Errorf("anthropic: %w", err)
+	}
+
+	if len(resp.Content) == 0 {
+		return "", fmt.Errorf("anthropic: no content returned")
+	}
+
+	// Text is a *string in some versions of the SDK, check and dereference
+	if resp.Content[0].Text != nil {
+		return *resp.Content[0].Text, nil
+	}
+	return "", fmt.Errorf("anthropic: content text is nil")
+}
+
+// --- Gemini ---
+
+type GeminiClient struct {
+	client *genai.Client
+	model  string
+}
+
+func NewGeminiClient(client *genai.Client, model string) *GeminiClient {
+	return &GeminiClient{client: client, model: model}
+}
+
+func (g *GeminiClient) Complete(ctx context.Context, system, user string) (string, error) {
+	resp, err := g.client.Models.GenerateContent(ctx, g.model, genai.Text(system+"\n\nUser Question: "+user), &genai.GenerateContentConfig{
+		Temperature: func(f float32) *float32 { return &f }(0.0),
+		MaxOutputTokens: 512,
+	})
+	if err != nil {
+		return "", fmt.Errorf("gemini: %w", err)
+	}
+
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("gemini: no candidates returned")
+	}
+
+	// For genai SDK, parts are structs with a Text field
+	part := resp.Candidates[0].Content.Parts[0]
+	if part.Text != "" {
+		return part.Text, nil
+	}
+	
+	return "", fmt.Errorf("gemini: could not extract text from response")
+}
+
+// --- Azure OpenAI ---
+
+type AzureOpenAIClient struct {
+	client *openai.Client
+	model  string // This is usually the deployment name in Azure
+}
+
+func NewAzureOpenAIClient(apiKey, endpoint, deployment string) *AzureOpenAIClient {
+	config := openai.DefaultAzureConfig(apiKey, endpoint)
+	config.AzureModelMapperFunc = func(model string) string {
+		return deployment // Always map to the deployment ID
+	}
+	client := openai.NewClientWithConfig(config)
+	return &AzureOpenAIClient{client: client, model: deployment}
+}
+
+func (a *AzureOpenAIClient) Complete(ctx context.Context, system, user string) (string, error) {
+	resp, err := a.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:       a.model,
+		Temperature: 0,
+		MaxTokens:   512,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleSystem, Content: system},
+			{Role: openai.ChatMessageRoleUser, Content: user},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("azure-openai: %w", err)
 	}
 	return resp.Choices[0].Message.Content, nil
 }
