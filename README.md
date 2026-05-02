@@ -1,11 +1,14 @@
 # Text2SQL
 
-Text2SQL is a powerful, secure, and multi-dialect API that converts natural language questions into executable SQL queries. It automatically introspects your database schema and uses advanced LLMs to generate precise, read-only queries.
+Text2SQL is a powerful, secure, and multi-dialect API that converts natural language questions into executable SQL queries. It automatically introspects your database schema and uses advanced LLMs to generate precise, read-only queries with natural language explanations.
 
 ## Features
 
 - **Multi-Dialect Support**: Works with PostgreSQL, MySQL, and SQLite.
 - **Multi-LLM Agnostic**: Supports OpenAI, Anthropic (Claude), Google Gemini, and Azure OpenAI.
+- **Views & Stored Procedures**: Automatically detects and utilizes database Views and Functions/Procedures in query generation.
+- **Explainable SQL**: Every generated query includes a natural language explanation of how it works.
+- **Performance Caching**: Built-in caching layer supporting **Redis** and **In-Memory** backends to reduce LLM costs and latency.
 - **Security First**: 
   - Strictly enforces `SELECT` / `WITH` queries only.
   - Blocklist for dangerous keywords (DROP, DELETE, etc.).
@@ -50,6 +53,13 @@ The application is configured entirely via environment variables. Create a `.env
 - **Gemini**: `GEMINI_API_KEY`
 - **Azure OpenAI**: `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT_ID`
 
+### 3. Caching Configuration
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `REDIS_URI` | Redis connection string | `redis://localhost:6379` |
+
+*If `REDIS_URI` is not provided, the application falls back to an auto-cleaning in-memory cache.*
+
 ## API Usage
 
 ### `POST /query`
@@ -66,6 +76,7 @@ Convert a question to SQL and execute it.
 ```json
 {
   "sql": "SELECT COUNT(*) FROM customers WHERE created_at > '2026-04-01' LIMIT 100",
+  "explanation": "I am counting the total number of records in the customers table where the creation date is within the last month.",
   "result": [
     { "count": 142 }
   ]
