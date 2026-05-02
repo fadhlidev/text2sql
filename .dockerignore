@@ -1,0 +1,15 @@
+.git
+.dev
+.gemini
+node_modules
+tmp
+*.out
+*.log
+.env
+.env.test
+Dockerfile
+docker-compose*.yml
+nix
+flake.nix
+flake.lock
+text2sql
