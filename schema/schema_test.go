@@ -183,3 +183,28 @@ func TestIntrospect_SQLite_ReadsTablesAndColumns(t *testing.T) {
 		t.Error("expected 'id' column to be primary key in SQLite")
 	}
 }
+
+func TestSchema_Context_IncludesViewsAndProcedures(t *testing.T) {
+	s := &Schema{
+		Tables: []Table{
+			{Name: "customer_summary", Type: "view", Columns: []Column{
+				{Name: "total_spent", Type: "numeric"},
+			}},
+		},
+		Procedures: []Procedure{
+			{Name: "calculate_tax", Args: "amount numeric", ReturnType: "numeric"},
+		},
+	}
+
+	ctx := s.Context()
+
+	if !strings.Contains(ctx, "View: customer_summary") {
+		t.Error("expected context to contain 'View: customer_summary'")
+	}
+	if !strings.Contains(ctx, "Procedures/Functions:") {
+		t.Error("expected context to contain 'Procedures/Functions:' header")
+	}
+	if !strings.Contains(ctx, "calculate_tax(amount numeric) returns numeric") {
+		t.Error("expected context to contain procedure definition")
+	}
+}
